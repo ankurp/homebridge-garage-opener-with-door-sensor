@@ -13,7 +13,8 @@
       "accessory": "Garage Door Opener",
       "name": "Pi Garage Opener",
       "doorRelayPin": 4,
-      "openCloseTime": 30000
+      "openCloseTime": 30000,
+      "doorStatusUrl": "https://domain.com/door/status"
     }
   ],
 

@@ -1,4 +1,9 @@
-const gpio = require('rpi-gpio');
+const gpio = process.platform === 'linux' ? require('rpi-gpio') : {
+  setMode: () => {},
+  setup: () => {},
+  write: () => {}
+};
+const request = require('request-promise');
 gpio.setMode(gpio.MODE_BCM);
 
 let Service, Characteristic, TargetDoorState, CurrentDoorState;
@@ -10,7 +15,7 @@ module.exports = function(homebridge) {
   Characteristic = homebridge.hap.Characteristic;
   TargetDoorState = Characteristic.TargetDoorState;
   CurrentDoorState = Characteristic.CurrentDoorState;
-  homebridge.registerAccessory('homebridge-garage-door-opener', 'Garage Door Opener', GarageDoorOpener);
+  homebridge.registerAccessory('homebridge-garage-opener-with-door-sensor', 'Garage Door Opener with Sensor', GarageDoorOpener);
 };
 
 class GarageDoorOpener {
@@ -19,10 +24,13 @@ class GarageDoorOpener {
     this.name = config.name;
     this.openCloseTime = config.openCloseTime;
     this.doorRelayPin = config.doorRelayPin;
+    this.doorStatusUrl = config.doorStatusUrl;
 
     gpio.setup(this.doorRelayPin, gpio.DIR_HIGH);
     this.currentDoorState = CurrentDoorState.CLOSED;
     this.targetDoorState = TargetDoorState.CLOSED;
+
+    this.getDoorStatus();
   }
 
   identify(callback) {
@@ -36,6 +44,23 @@ class GarageDoorOpener {
       gpio.write(this.doorRelayPin, OFF);
       callback();
     }, 500);
+  }
+
+  async getDoorStatus() {
+    try {
+      if (this.currentDoorState !== CurrentDoorState.OPENING && this.currentDoorState !== CurrentDoorState.CLOSING) {
+        const response = await request(this.doorStatusUrl);
+        const { isOpen } = JSON.parse(response);
+        if (isOpen && this.currentDoorState !== CurrentDoorState.OPEN) {
+          this.service.setCharacteristic(CurrentDoorState, CurrentDoorState.OPEN);
+        } else if (!isOpen && this.currentDoorState !== CurrentDoorState.CLOSED) {
+          this.service.setCharacteristic(CurrentDoorState, CurrentDoorState.CLOSED);
+        }
+      }
+    } catch(e) {
+      this.log('Error: ', e);
+    }
+    setTimeout(() => this.getDoorStatus(), 1000);
   }
 
   getServices() {
